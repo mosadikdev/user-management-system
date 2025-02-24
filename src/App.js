@@ -1,137 +1,191 @@
-import { useState, useRef, useContext } from 'react';
-import { TodoContext } from "./context/TodoContext";
-import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
-import './App.css';
+import React, { useState, useEffect } from "react";
+import { getUsers, addUser, updateUser, deleteUser } from "./services/api";
 
-function App() {
-  const { todos, dispatch, categories } = useContext(TodoContext);
-  const [todoInput, setTodoInput] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState("General");
+const App = () => {
+  const [users, setUsers] = useState([]);
+  const [newUser, setNewUser] = useState({ name: "", email: "" });
+  const [editingUser, setEditingUser] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState("All");
-  const inputRef = useRef(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
-  const addTodo = () => {
-    if (todoInput.trim()) {
-      const exists = todos.some(todo => todo.text.toLowerCase() === todoInput.toLowerCase());
+  const isValidEmail = (email) => {
+    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return regex.test(email);
+  };
 
-      if (exists) {
-        setError("This Task already exists");
-        return;
-      }
+  const filteredUsers = users.filter(
+    (user) =>
+      user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-      dispatch({ type: "ADD", payload: { text: todoInput, category: selectedCategory } });
-      inputRef.current.focus();
-      setTodoInput("");
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const fetchUsers = async () => {
+    setLoading(true);
+    try {
+      const data = await getUsers();
+      setUsers(data);
       setError("");
+    } catch (error) {
+      setError("Failed to load users. Please try again later.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const deleteTodo = (id) => {
-    if (window.confirm('Are you sure you want to delete this task?')) {
-      dispatch({ type: "DELETE", payload: id });
+  const handleAddUser = async () => {
+    if (!newUser.name || !newUser.email) {
+      setError("Please fill all fields");
+      return;
+    }
+    if (!isValidEmail(newUser.email)) {
+      setError("Please enter a valid email address");
+      return;
+    }
+
+    try {
+      const addedUser = await addUser(newUser);
+      setUsers([...users, addedUser]);
+      setNewUser({ name: "", email: "" });
+      setError("");
+    } catch (error) {
+      setError("Failed to add user. Please try again.");
     }
   };
 
-  const filteredTodos = filter === "All" ? todos : todos.filter(todo => todo.category === filter);
+  const handleUpdateUser = async () => {
+    if (!editingUser.name || !editingUser.email) {
+      setError("Please fill all fields");
+      return;
+    }
+    if (!isValidEmail(editingUser.email)) {
+      setError("Please enter a valid email address");
+      return;
+    }
 
-  const handleDragEnd = (result) => {
-    if (!result.destination) return;
+    try {
+      const updatedUser = await updateUser(editingUser.id, editingUser);
+      setUsers(users.map((user) => (user.id === editingUser.id ? updatedUser : user)));
+      setEditingUser(null);
+      setError("");
+    } catch (error) {
+      setError("Failed to update user. Please try again.");
+    }
+  };
 
-    const updatedTodos = Array.from(filteredTodos);
-    const [movedItem] = updatedTodos.splice(result.source.index, 1);
-    updatedTodos.splice(result.destination.index, 0, movedItem);
-
-    dispatch({ type: "REORDER", payload: updatedTodos });
+  const handleDeleteUser = async (id) => {
+    try {
+      await deleteUser(id);
+      setUsers(users.filter((user) => user.id !== id));
+      setError("");
+    } catch (error) {
+      setError("Failed to delete user. Please try again.");
+    }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-r from-gray-600 to-gray-400">
-      <div className="bg-white shadow-xl rounded-3xl p-16">
-        <h1 className="text-center text-3xl text-gray-900 font-bold mb-6">React Todo App 📝</h1>
+    <div className="max-w-4xl mx-auto p-6 bg-gray-100 min-h-screen">
+      <h1 className="text-3xl font-bold mb-6 text-center">User Management System</h1>
 
-        <div className="mb-4 flex gap-2">
+      {error && <div className="text-red-500 p-2 mb-4 text-center">{error}</div>}
+
+      <div className="mb-4 p-4 bg-white shadow-md rounded-lg">
+        <h2 className="text-xl font-semibold mb-2">Add User</h2>
+        <input
+          type="text"
+          placeholder="Name"
+          className="border p-2 w-full mb-2"
+          value={newUser.name}
+          onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+        />
+        <input
+          type="email"
+          placeholder="Email"
+          className="border p-2 w-full mb-2"
+          value={newUser.email}
+          onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+        />
+        <button className="bg-blue-500 text-white p-2 w-full" onClick={handleAddUser}>
+          Add User
+        </button>
+      </div>
+
+      <div className="bg-white shadow-md rounded-lg p-4">
+        <div className="mb-4">
           <input
             type="text"
-            placeholder="Write your todo here"
-            value={todoInput}
-            onChange={(e) => setTodoInput(e.target.value)}
-            ref={inputRef}
-            className="border px-3 py-2 w-full rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500"
+            placeholder="Search users..."
+            className="border p-2 w-full"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
           />
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="border px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-          >
-            {categories.map((category) => (
-              <option key={category} value={category}>{category}</option>
-            ))}
-          </select>
-          <button
-            onClick={addTodo}
-            className="bg-gray-500 px-4 py-2 text-white rounded-lg hover:bg-gray-600"
-          >
-            ADD
-          </button>
         </div>
 
-        {error && <p className="text-red-500 text-center">{error}</p>}
-
-        <div className="mb-4">
-          <label className="block text-gray-700">Filter by categories:</label>
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="border px-3 py-2 w-full rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-          >
-            <option value="All">All</option>
-            {categories.map(category => (
-              <option key={category} value={category}>{category}</option>
+        {loading ? (
+          <div className="text-center p-4">Loading...</div>
+        ) : (
+          <ul>
+            {filteredUsers.map((user) => (
+              <li key={user.id} className="flex justify-between items-center border-b p-2">
+                <div>
+                  <p className="font-semibold">{user.name}</p>
+                  <p className="text-gray-600">{user.email}</p>
+                </div>
+                <div className="space-x-2">
+                  <button
+                    className="bg-yellow-500 text-white p-1 rounded"
+                    onClick={() => setEditingUser(user)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="bg-red-500 text-white p-1 rounded"
+                    onClick={() => handleDeleteUser(user.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </li>
             ))}
-          </select>
-        </div>
-
-        <DragDropContext onDragEnd={handleDragEnd}>
-          <Droppable droppableId="todos">
-            {(provided) => (
-              <ul className="space-y-2" {...provided.droppableProps} ref={provided.innerRef}>
-                {filteredTodos.map((todo, index) => (
-                  <Draggable key={todo.id} draggableId={todo.id.toString()} index={index}>
-                    {(provided) => (
-                      <li
-                        ref={provided.innerRef}
-                        {...provided.draggableProps}
-                        {...provided.dragHandleProps}
-                        className="flex items-center p-2 rounded-lg bg-gray-100 border border-gray-200"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={todo.completed}
-                          onChange={() => dispatch({ type: "TOGGLE", payload: todo.id })}
-                          className="mr-2 h-5 w-5 text-blue-600"
-                        />
-                        <span className={`flex-grow ${todo.completed ? "line-through text-gray-500" : "text-gray-800"}`}>
-                          {todo.text} <span className="text-sm text-gray-500">({todo.category})</span>
-                        </span>
-                        <button
-                          onClick={() => deleteTodo(todo.id)}
-                          className="ml-2 bg-red-500 hover:bg-red-600 px-2 text-white rounded-lg"
-                        >
-                          X
-                        </button>
-                      </li>
-                    )}
-                  </Draggable>
-                ))}
-                {provided.placeholder}
-              </ul>
-            )}
-          </Droppable>
-        </DragDropContext>
+          </ul>
+        )}
       </div>
+
+      {editingUser && (
+        <div className="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg shadow-lg">
+            <h2 className="text-xl font-semibold mb-2">Edit User</h2>
+            <input
+              type="text"
+              placeholder="Name"
+              className="border p-2 w-full mb-2"
+              value={editingUser.name}
+              onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
+            />
+            <input
+              type="email"
+              placeholder="Email"
+              className="border p-2 w-full mb-2"
+              value={editingUser.email}
+              onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+            />
+            <div className="flex space-x-2">
+              <button className="bg-green-500 text-white p-2 flex-1" onClick={handleUpdateUser}>
+                Save
+              </button>
+              <button className="bg-gray-400 text-white p-2 flex-1" onClick={() => setEditingUser(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+};
 
 export default App;
